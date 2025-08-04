@@ -19,164 +19,214 @@ from matplotlib.ticker import AutoMinorLocator
 # Misc
 import time
 ##############################################################################################
-###### Standard functions related to the Neural Network ######
+###### Standard Functions Related to the Neural Network ######
 ##############################################################################################
-# Parameter defaults
-def para_def(epsilon = 1e-2, gamma = 1.0, EpUp = 20, NoUp = 200, h_n = 40, printyn = True, rho = 0.25*(1e-2)):
-        return (epsilon, gamma, EpUp, NoUp, h_n, printyn, rho)
-# Cartesian Grid 
-def Domains(N, xStart = 0., xEnd = 1.):
-        # 1-D Domains
-        x1 = np.linspace(xStart, xEnd, N)
-        x = torch.from_numpy(x1).requires_grad_(requires_grad = True).type(torch.float32)
-        return torch.unsqueeze(x,-1)
-# Trapezoidal Rule integral
+
+# Default parameter values for the training procedure
+def para_def(epsilon=1e-2, gamma=1.0, EpUp=20, NoUp=200, h_n=40, printyn=True, rho=0.25*(1e-2)):
+    """
+    Sets and returns training and problem parameters.
+
+    Returns:
+        Tuple containing:
+            epsilon: Regularization coefficient
+            gamma: Weight on boundary terms
+            EpUp: Epochs per update
+            NoUp: Number of updates
+            h_n: Width of neural network layers
+            printyn: Toggle for printing training info
+            rho: Learning rate for adjoint variables
+    """
+    return (epsilon, gamma, EpUp, NoUp, h_n, printyn, rho)
+
+# Generates a 1D tensor of evenly spaced domain points in [xStart, xEnd]
+def Domains(N, xStart=0., xEnd=1.):
+    """
+    Generates a 1D domain for training or evaluation.
+
+    Args:
+        N: Number of points
+        xStart: Start of domain
+        xEnd: End of domain
+
+    Returns:
+        x: Torch tensor of shape (N, 1) with gradient tracking enabled
+    """
+    x1 = np.linspace(xStart, xEnd, N)
+    x = torch.from_numpy(x1).requires_grad_(True).type(torch.float32)
+    return torch.unsqueeze(x, -1)
+
+# Trapezoidal integration for 1D torch tensor
 def Int1D(fun):
-        N = fun.size(dim=0)
-        return torch.sum(0.5*(fun[0:N-1] + fun[1:N]))
+    """
+    Computes 1D trapezoidal integral over uniform grid.
+
+    Args:
+        fun: Function values as a torch tensor
+
+    Returns:
+        Approximated integral value (torch scalar)
+    """
+    N = fun.size(dim=0)
+    return torch.sum(0.5 * (fun[0:N-1] + fun[1:N]))
+
 ##############################################################################################
 ###### Code for Plots and Saving ######
 ##############################################################################################
-def plot_loss(loss_history, path, filename, para, labels = ['Total', 'PINNs', 'Adjoint', 'Gamma']):
-        fig, ax = plt.subplots(layout='constrained')
-        ax.set_xlabel('Epoch')
-        ax.set_ylabel('Loss')
-        for i in range(len(loss_history[0])):  # Loop over each component
-                # Extract and plot each component
-                component_loss = [loss[i] for loss in loss_history]
-                plt.semilogy(list(range(len(component_loss))), component_loss, label=labels[i],  linewidth=0.5)
-        def epochs2updates(x):
-                return x / para[2]
-        def updates2epochs(x):
-                return x * para[2]
-        secax = ax.secondary_xaxis('top', functions=(epochs2updates, updates2epochs))
-        secax.set_xlabel('Update No.') 
-        plt.legend()  
-        plt.savefig(f"{path}/{filename}.pdf", format='pdf')
-        plt.close()
-# Plot error        
+
+# Plot loss curves with multiple components
+def plot_loss(loss_history, path, filename, para, labels=['Total', 'PINNs', 'Adjoint', 'Gamma']):
+    """
+    Plots and saves loss curves for each component of the loss function.
+    """
+    fig, ax = plt.subplots(layout='constrained')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Loss')
+    for i in range(len(loss_history[0])):
+        component_loss = [loss[i] for loss in loss_history]
+        plt.semilogy(range(len(component_loss)), component_loss, label=labels[i], linewidth=0.5)
+
+    def epochs2updates(x): return x / para[2]
+    def updates2epochs(x): return x * para[2]
+
+    secax = ax.secondary_xaxis('top', functions=(epochs2updates, updates2epochs))
+    secax.set_xlabel('Update No.')
+    plt.legend()
+    plt.savefig(f"{path}/{filename}.pdf", format='pdf')
+    plt.close()
+
+# Plot state error across updates
 def plot_error(para, err_his, path, filename):
-        fig, ax = plt.subplots(layout='constrained')
-        ax.set_xlabel('Update No.')
-        ax.set_ylabel('Error')
-        labels = ['State']
-        for i in range(len(err_his[0])):  # Loop over each component
-                # Extract and plot each component
-                component_err = [err[i] for err in err_his]
-                ax.semilogy(list(range(len(component_err))), component_err, label=labels[i],  linewidth=0.5)         
-        def epochs2updates(x):
-                return x * para[2]
-        def updates2epochs(x):
-                return x / para[2]
-        secax = ax.secondary_xaxis('top', functions=(epochs2updates, updates2epochs))
-        secax.set_xlabel('Epoch')
-        plt.legend()
-        plt.savefig(f"{path}/{filename}.pdf", format='pdf')
-        plt.close()
-# My save
-def mysave(f, path, filename, domain = True):
-        if domain and torch.is_tensor(f):
-                f = f.detach().numpy()
-        elif torch.is_tensor(f):
-                f = f.detach().numpy()
-        np.savetxt(f"{path}/{filename}.csv", f, delimiter=',')
-# Plot the solution and the exact solution
-def plot_line(x, u, uexact, path,filename):
-        plt.figure()
-        plt.plot(x.detach().numpy(), uexact.detach().numpy(), '--', color='orange', label='$exact$', alpha=0.5)  
-        plt.plot(x.detach().numpy(), u.detach().numpy(), 'o', color='orange', label='$u_\\theta$', alpha=0.5)  
-        plt.grid(True)  # Turns on the grid
-        plt.legend(loc='upper right')
-        plt.savefig(f"{path}/{filename}.pdf", format='pdf')
-        plt.close()
-# Plot the values of z
-def plot_z(z, path,filename):
-        fig, ax = plt.subplots(layout='constrained')
-        ax.set_xlabel('Update No.') 
-        labels = [r'$\lambda(0)$',r'$\lambda(1)$']
-        for i in range(len(z[0])):  # Loop over each component
-                # Extract and plot each component
-                component_loss = [loss[i] for loss in z]
-                plt.plot(list(range(len(component_loss))), component_loss, label=labels[i],  linewidth=0.5)
-        def epochs2updates(x):
-                return x * para[2]
-        def updates2epochs(x):
-                return x / para[2]
-        secax = ax.secondary_xaxis('top', functions=(epochs2updates, updates2epochs))
-        secax.set_xlabel('Epoch')
-        plt.legend()  
-        plt.savefig(f"{path}/{filename}.pdf", format='pdf')
-        plt.close()
+    """
+    Plots and saves the state error over updates.
+    """
+    fig, ax = plt.subplots(layout='constrained')
+    ax.set_xlabel('Update No.')
+    ax.set_ylabel('Error')
+    labels = ['State']
+    for i in range(len(err_his[0])):
+        component_err = [err[i] for err in err_his]
+        ax.semilogy(range(len(component_err)), component_err, label=labels[i], linewidth=0.5)
+
+    def epochs2updates(x): return x * para[2]
+    def updates2epochs(x): return x / para[2]
+
+    secax = ax.secondary_xaxis('top', functions=(epochs2updates, updates2epochs))
+    secax.set_xlabel('Epoch')
+    plt.legend()
+    plt.savefig(f"{path}/{filename}.pdf", format='pdf')
+    plt.close()
+
+# Save tensor or array to CSV
+def mysave(f, path, filename, domain=True):
+    """
+    Saves a tensor or array to CSV.
+
+    Args:
+        f: Tensor or array to save
+        domain: If True, detaches and converts tensor to NumPy
+    """
+    if domain and torch.is_tensor(f):
+        f = f.detach().numpy()
+    elif torch.is_tensor(f):
+        f = f.detach().numpy()
+    np.savetxt(f"{path}/{filename}.csv", f, delimiter=',')
+
+# Plot predicted vs exact solution
+def plot_line(x, u, uexact, path, filename):
+    """
+    Plots the neural network solution and exact solution on the same plot.
+    """
+    plt.figure()
+    plt.plot(x.detach().numpy(), uexact.detach().numpy(), '--', color='orange', label='$exact$', alpha=0.5)
+    plt.plot(x.detach().numpy(), u.detach().numpy(), 'o', color='orange', label='$u_\\theta$', alpha=0.5)
+    plt.grid(True)
+    plt.legend(loc='upper right')
+    plt.savefig(f"{path}/{filename}.pdf", format='pdf')
+    plt.close()
+
+# Plot adjoint variable values across updates
+def plot_z(z, path, filename):
+    """
+    Plots the evolution of adjoint variables over training.
+    """
+    fig, ax = plt.subplots(layout='constrained')
+    ax.set_xlabel('Update No.')
+    labels = [r'$\lambda(0)$', r'$\lambda(1)$']
+    for i in range(len(z[0])):
+        component_loss = [loss[i] for loss in z]
+        plt.plot(range(len(component_loss)), component_loss, label=labels[i], linewidth=0.5)
+
+    def epochs2updates(x): return x * para[2]
+    def updates2epochs(x): return x / para[2]
+
+    secax = ax.secondary_xaxis('top', functions=(epochs2updates, updates2epochs))
+    secax.set_xlabel('Epoch')
+    plt.legend()
+    plt.savefig(f"{path}/{filename}.pdf", format='pdf')
+    plt.close()
+
 ##############################################################################################
 ###### Training of the Neural Network ######
 ##############################################################################################
-def geo_train(f, gd, para, x, exact = torch.tensor([float('nan')]), learning_rate = 1e-3,  device = torch.device("cpu")):       
-        ###### Activation Function ######
-        class Swish(nn.Module):
-                def __init__(self, inplace=True):
-                        super(Swish, self).__init__()
-                        self.inplace = inplace
-                        
-                def forward(self, x):
-                        if self.inplace:
-                                x.mul_(torch.sigmoid(x))
-                                return x
-                        else:
-                                return x * torch.sigmoid(x)
-        ###### Neural Network ######                
-        class generatorNN(nn.Module):
-                def __init__(self, input_n, h_n):
-                        super(generatorNN, self).__init__()
-                        self.log_learning_rate = nn.Parameter(torch.log(torch.tensor(1e-3)))
-        
-                        # Shared layers for both u and f
-                        self.shared_layers = nn.Sequential(
-                                nn.Linear(input_n,h_n),
-                                #nn.ReLU(),
-                                Swish(),
-                                nn.Linear(h_n,h_n),
-                                #nn.ReLU(),
-                                Swish(),
-                                nn.Linear(h_n,h_n),
-                                #nn.ReLU(),
-                                Swish(),
-                        )
-                        # Separate layers for u
-                        self.u_layers = nn.Sequential(
-                                nn.Linear(h_n, h_n),
-                                Swish(),
-                                nn.Linear(h_n, 1),
-                        )
-                        
-                def forward(self, x):
-                        shared_output = self.shared_layers(x)
+def geo_train(f, gd, para, x, exact=torch.tensor([float('nan')]), learning_rate=1e-3, device=torch.device("cpu")):
+    """
+    Trains a neural network to solve a 1D PDE with physics-informed loss and adjoint terms.
+    """
 
-                        # Compute u using its respective layers
-                        u = self.u_layers(shared_output)
-                        return u
-        ###### Initialize the neural network using a standard method ######
-        def init_normal(m):
-                if type(m) == nn.Linear:
-                        nn.init.kaiming_normal_(m.weight)
-        ############################################################
-        
-        
-        def generatorCriterion(x, z, f, gd, para):
-                u = generator_NN(x)  # Unpacku 
-                dx = ((torch.max(x) - torch.min(x))/ sqrt(x.size(0) - 1)).item()
-                # Compute Laplacian
-                ux  = torch.autograd.grad(u,  x, grad_outputs=torch.ones_like(x), create_graph=True, only_inputs=True)[0] 
-                # Convert target to a PyTorch tensor and ensure it's on the same device as x
-                z = z.clone().detach()
-                
-                # First term: 0.5 * Norm{u - target}^2
-                term1 = 0.5 * dx * para[0]* Int1D(ux**2) + 0.5 * dx * Int1D(u**2) - dx * Int1D(u*f)
-                
-                # Second term: alpha/2 * Norm{f}^2
-                term2_1 = z[0]*(u[0]-gd[0]) + z[-1]*(u[-1]-gd[-1])
-                #term2_2 = para[1] * ((para[0]*ux[0])**2 + (para[0]*ux[-1])**2)
-                term2_2 = para[1]*0.5*(u[0]-gd[0])**2 + para[1]*0.5*(u[-1]-gd[-1])**2
-                return term1 + term2_1 + term2_2, term1, term2_1, term2_2, u
+    ###### Swish Activation Function ######
+    class Swish(nn.Module):
+        def __init__(self, inplace=True):
+            super(Swish, self).__init__()
+            self.inplace = inplace
+
+        def forward(self, x):
+            if self.inplace:
+                x.mul_(torch.sigmoid(x))
+                return x
+            else:
+                return x * torch.sigmoid(x)
+
+    ###### Neural Network Model Definition ######
+    class generatorNN(nn.Module):
+        def __init__(self, input_n, h_n):
+            super(generatorNN, self).__init__()
+            self.log_learning_rate = nn.Parameter(torch.log(torch.tensor(1e-3)))
+
+            self.shared_layers = nn.Sequential(
+                nn.Linear(input_n, h_n),
+                Swish(),
+                nn.Linear(h_n, h_n),
+                Swish(),
+                nn.Linear(h_n, h_n),
+                Swish(),
+            )
+
+            self.u_layers = nn.Sequential(
+                nn.Linear(h_n, h_n),
+                Swish(),
+                nn.Linear(h_n, 1),
+            )
+
+        def forward(self, x):
+            shared_output = self.shared_layers(x)
+            return self.u_layers(shared_output)
+
+    # He-style weight initialization
+    def init_normal(m):
+        if isinstance(m, nn.Linear):
+            nn.init.kaiming_normal_(m.weight)
+
+    ###### Loss Function Definition ######
+    def generatorCriterion(x, z, f, gd, para):
+        u = generator_NN(x)
+        dx = ((torch.max(x) - torch.min(x)) / sqrt(x.size(0) - 1)).item()
+
+        ux = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(x), create_graph=True)[0]
+        z = z.clone().detach()
+
+        term1 = 0.5 * dx * para[0] * Int1D(ux ** 2) + 0.5 * dx * Int1D(u ** 2) - dx * Int1D(u * f)
+
         ############################################################
         dx = (torch.max(x) - torch.min(x))/ (x.size(0)- 1)
         z = torch.Tensor([0.0,0.0])
