@@ -266,46 +266,58 @@ def geo_train(f, gd, para, x, exact=torch.tensor([float('nan')]), learning_rate=
         state_error = torch.sqrt(Int1D(dx*(u-exact[0])**2))
         err_history.append([state_error.item()])
         return generator_NN, u, err_history, loss_history, z_history
-##############################################################################################
-###### Main Code ######
-##############################################################################################
-device = torch.device("cpu")
-gamma_values  = [1E+0, 1E+1, 1E+2, 1E+3, 1E+4, 1E+5]
-log_eps_values = [1, 3]
-npts = 401
-EpUp = 40
-NoUp = 500
-log_r_values = ['-inf']
-for gamma in gamma_values:
+
+if __name__ == "__main__":
+    ##############################################################################################
+    ###### Main Code ######
+    ##############################################################################################
+    device = torch.device("cpu")
+    gamma_values  = [1E+0, 1E+1, 1E+2, 1E+3, 1E+4, 1E+5]
+    log_eps_values = [1, 3]
+    npts = 401
+    EpUp = 40
+    NoUp = 500
+    log_r_values = ['-inf']
+
+    for gamma in gamma_values:
         for log_eps in log_eps_values:
-                eps = torch.Tensor([10**(-log_eps)])
-                eps.to(torch.float64)
-                for log_rho in log_r_values:
-                        path = f'./Vary_epsilon_{log_eps}_gamma_{gamma}_rho_{log_rho}_EpUp_{EpUp}_NoUp_{NoUp}_nPts_{npts}'
-                        #rho = torch.Tensor([10**(log_rho)])
-                        rho = torch.Tensor([0])
-                        rho.to(torch.float64)
-                            
-                        para = para_def(eps, gamma, EpUp, NoUp, 40, True, rho)
-                        
-                        
-                        if not os.path.isdir(path):
-                                os.makedirs(path)
-                        x = Domains(npts)
-                        f = torch.ones_like(x)  
-                        gd = torch.Tensor([0.0,0.0])
-                        ##############################################################################################
-                        exact_u = 1 - (torch.exp((1-x.to(torch.float64))/torch.sqrt(eps).to(torch.float64)) + torch.exp(x.to(torch.float64)/torch.sqrt(eps).to(torch.float64)))/(torch.exp(1/torch.sqrt(eps).to(torch.float64)) + 1)
-                        ##############################################################################################
-                        generator_NN, u, err_history, loss_history, z_history = geo_train(f, gd, para, x, exact = [exact_u]) 
-                        plot_line(x, u, exact_u, path, f'State')
-                        plot_error(para, err_history, path, f'Error')
-                        plot_z(z_history, path,f'Adjoint')
-                        plot_loss(loss_history, path, f'Loss', para)
-                        mysave(u, path, f'State')
-                        mysave(u[0::4], path, f'State_small')
-                        mysave(z_history, path, f'Adjoint')
-                        mysave(z_history[0::5], path, f'Adjoint_small')
-                        mysave(err_history, path, f'Error',False)
-                        mysave(err_history[0::5], path, f'Error_small',False)
-                        mysave(loss_history, path, f'Loss',False)
+            eps = torch.Tensor([10**(-log_eps)]).to(torch.float64)
+            for log_rho in log_r_values:
+                path = f'./Vary_epsilon_{log_eps}_gamma_{gamma}_rho_{log_rho}_EpUp_{EpUp}_NoUp_{NoUp}_nPts_{npts}'
+                rho = torch.Tensor([0]).to(torch.float64)
+
+                para = para_def(eps, gamma, EpUp, NoUp, 40, True, rho)
+
+                if not os.path.isdir(path):
+                    os.makedirs(path)
+
+                x = Domains(npts)
+                f = torch.ones_like(x)  
+                gd = torch.Tensor([0.0, 0.0])
+
+                # Exact solution
+                sqrt_eps = torch.sqrt(eps).to(torch.float64)
+                exact_u = 1 - (
+                    torch.exp((1 - x.to(torch.float64)) / sqrt_eps) +
+                    torch.exp(x.to(torch.float64) / sqrt_eps)
+                ) / (torch.exp(1 / sqrt_eps) + 1)
+
+                # Train the neural network
+                generator_NN, u, err_history, loss_history, z_history = geo_train(
+                    f, gd, para, x, exact=[exact_u]
+                )
+
+                # Plotting and saving results
+                plot_line(x, u, exact_u, path, 'State')
+                plot_error(para, err_history, path, 'Error')
+                plot_z(z_history, path, 'Adjoint')
+                plot_loss(loss_history, path, 'Loss', para)
+
+                mysave(u, path, 'State')
+                mysave(u[0::4], path, 'State_small')
+                mysave(z_history, path, 'Adjoint')
+                mysave(z_history[0::5], path, 'Adjoint_small')
+                mysave(err_history, path, 'Error', False)
+                mysave(err_history[0::5], path, 'Error_small', False)
+                mysave(loss_history, path, 'Loss', False)
+
